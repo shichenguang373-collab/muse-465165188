@@ -197,6 +197,30 @@ def flush_outbox(store, baseurl, token):
             mark_needs_relogin(store, "sendmessage 返回 -14，token 失效")
             print("sendmessage 返回 -14，token 失效。", flush=True)
             return False
+        # 只有明确的成功状态才归档为 sent；异常/未知响应保留任务并重试。
+        if not isinstance(resp, dict):
+            print("发送响应格式异常（非 JSON 对象），稍后重试: %s" % name, flush=True)
+            _retry_at[path] = time.time() + 2
+            continue
+        status_fields = [key for key in ("ret", "errcode") if key in resp]
+        if not status_fields:
+            print("发送响应缺少 ret/errcode，无法确认送达，稍后重试: %s" % name, flush=True)
+            _retry_at[path] = time.time() + 2
+            continue
+        status_values = []
+        malformed_status = False
+        for key in status_fields:
+            try:
+                status_values.append(int(resp[key]))
+            except (TypeError, ValueError):
+                malformed_status = True
+                break
+        if malformed_status or any(code != 0 for code in status_values):
+            print("发送接口返回失败状态 %s，稍后重试: %s" %
+                  (", ".join("%s=%r" % (key, resp.get(key)) for key in status_fields), name),
+                  flush=True)
+            _retry_at[path] = time.time() + 2
+            continue
         sent_at = time.time()
         try:
             queued = sent_at - os.path.getmtime(path)  # 回复文件落盘 -> 真正发出
@@ -259,14 +283,18 @@ def run(store, baseurl, token, owner_id):
                 time.sleep(delay)
                 continue
             consec_failures = 0
+            # 先校验响应类型，再读取字段，避免异常 JSON 类型让常驻服务崩溃。
+            if not isinstance(resp, dict):
+                print("getupdates 响应格式异常（%s），忽略本次响应并继续轮询。" %
+                      type(resp).__name__, flush=True)
+                time.sleep(2)
+                continue
             try:
                 suggested = int(resp.get("longpolling_timeout_ms") or 0)
                 if suggested > 0:
                     poll_timeout = min(suggested // 1000 + 10, 120)
             except (TypeError, ValueError):
                 pass
-            if not isinstance(resp, dict):
-                resp = {}
             if is_token_invalid(resp):
                 # -14 也可能是限流：先暂停 5 分钟重试一次，仍失败才判 token 死亡
                 print("收到 -14，暂停 5 分钟后重试一次…", flush=True)
