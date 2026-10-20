@@ -11,7 +11,7 @@
 1. exec 运行：python3 /home/hatch/workspace/wechat-bridge/worker_watch.py --timeout 600
 它阻塞直到有新消息，返回 {"watch_ts": 时间戳, "messages": [{"id","text","from_user_id","context_token","bot_id"}]}。
 bot_id="main" 是老板的机器人，其他 bot_id（如 guest-01）是客人机器人。
-退出 1 是超时（10 分钟无消息），回到本步继续。注意：用 600 秒超时（不要用更长的），超时后立刻重新运行。
+退出码 1 表示超时（10 分钟无消息），回到本步继续。注意：用 600 秒超时（不要用更长的），超时后立刻重新运行。若以其他非 0 退出码结束，先记录错误信息，再立即重新运行本步；不要因此退出常驻循环。
 
 【多用户身份与隔离规则】
 - bot_id="main"：在跟老板聊天，一切照旧，全部权限。
