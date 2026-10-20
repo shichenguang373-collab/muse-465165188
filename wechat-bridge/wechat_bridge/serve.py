@@ -301,8 +301,15 @@ def run(store, baseurl, token, owner_id):
                 time.sleep(300)
                 try:
                     resp = http_json("POST", url, auth_headers(token), body, timeout=poll_timeout)
-                except Exception:
-                    resp = {}
+                except Exception as e:
+                    print("getupdates 重试失败: %s" % e, flush=True)
+                    time.sleep(2)
+                    continue
+                if not isinstance(resp, dict):
+                    print("getupdates 重试响应格式异常（%s），继续轮询。" %
+                          type(resp).__name__, flush=True)
+                    time.sleep(2)
+                    continue
                 if is_token_invalid(resp):
                     mark_needs_relogin(store, "getupdates 返回 -14，token 失效")
                     print("token 确认失效，已写 NEEDS_RELOGIN 标记，退出。", flush=True)
